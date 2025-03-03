@@ -1,9 +1,10 @@
 const std = @import("std");
 const ShaTweakHash = @import("tweak/sha3.zig").ShaTweakHash;
+const TweakableHash = @import("tweak/tweakable.zig").TweakableHash;
 
 pub fn chain(
     allocator: std.mem.Allocator,
-    hash: *const ShaTweakHash,
+    hash: TweakableHash,
     epoch: u32,
     chain_index: u16,
     start_pos: u16,

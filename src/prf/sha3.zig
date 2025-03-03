@@ -13,7 +13,7 @@ pub const ShaPRF = struct {
         0x00, 0xaf, 0x12, 0xff, 0x01, 0xfa, 0xff, 0x00
     };
     
-    pub fn init(allocator: std.mem.Allocator, key_size: usize, output_size: usize) Self {
+    pub fn init(allocator: std.mem.Allocator, key_size: usize, output_size: usize) !Self {
         const key = try allocator.alloc(u8, key_size);
         var random = std.crypto.random;
         random.bytes(key);

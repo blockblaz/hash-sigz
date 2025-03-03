@@ -1,14 +1,15 @@
 const std = @import("std");
 const ShaTweakHash = @import("sha3.zig").ShaTweakHash;
+const TweakableHash = @import("tweakable.zig").TweakableHash;
 
 pub const MerkleTree = struct {
     height: usize,
     nodes: [][]u8,
-    hash: *const ShaTweakHash,
+    hash: *const TweakableHash,
     
     pub fn build(
         allocator: std.mem.Allocator,
-        hash: *const ShaTweakHash,
+        hash: *const TweakableHash,
         leaf_hashes: []const []const u8
     ) !MerkleTree {
         const num_leaves = leaf_hashes.len;
@@ -108,7 +109,7 @@ pub const MerklePath = struct {
     siblings: [][]u8,
     leaf_index: usize,
     height: usize,
-    hash: *const ShaTweakHash,
+    hash: *const TweakableHash,
     
     pub fn deinit(self: *MerklePath, allocator: std.mem.Allocator) void {
         for (self.siblings) |sibling| {

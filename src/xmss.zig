@@ -8,59 +8,52 @@ const WinternitzEncoding = @import("encoding/winternitz.zig").WinternitzEncoding
 const MerkleTree = @import("tweak/tree.zig").MerkleTree;
 const MerklePath = @import("tweak/tree.zig").MerklePath;
 const chain = @import("hash_chain.zig").chain;
+const TweakableHash = @import("tweak/tweakable.zig").TweakableHash;
+const PRF = @import("prf/prf.zig").PRF;
 
 pub const XMSS = struct {
     pub const Signature = struct {
         path: MerklePath,
         randomness: []u8,
         chain_values: [][]u8,
-
-        pub fn deinit(self: *Signature, allocator: Allocator) void {
-            self.path.deinit(allocator);
-            allocator.free(self.randomness);
-            for (self.chain_values) |value| {
-                allocator.free(value);
-            }
-            allocator.free(self.chain_values);
-        }
     };
 
-    pub const KeyPair = struct {
-        public_key: struct {
-            root: []u8,
-            hash_parameter: []u8,
-        },
-        secret_key: struct {
-            prf_key: []u8,
-            merkle_tree: MerkleTree,
-            hash_parameter: []u8,
-        },
+    pub const XMSSPublicKey = struct {
+        // Domain
+        root: []u8,
+        // Parameter
+        hash_parameter: []u8,
+    };
 
-        pub fn deinit(self: *KeyPair, allocator: Allocator) void {
-            allocator.free(self.public_key.root);
-            allocator.free(self.public_key.hash_parameter);
-            allocator.free(self.secret_key.prf_key);
-            self.secret_key.merkle_tree.deinit(allocator);
-            allocator.free(self.secret_key.hash_parameter);
-        }
+    pub const XMSSSecretKey = struct {
+        // Key
+        prf_key: []u8,
+        // Merkle Tree of All 2^LOG_LIFETIME Hashes
+        tree: MerkleTree,
+        // Parameter
+        parameter: []u8,
     };
 
     allocator: Allocator,
     lifetime_log2: u8,
     chunk_size: u8,
-    hash: ShaTweak128,
-    prf: ShaPRF,
+    hash: TweakableHash,
+    prf: PRF,
     encoding: WinternitzEncoding,
 
-    pub fn init(allocator: Allocator, lifetime_log2: u8, chunk_size: u8) !XMSS {
+    pub fn init(
+        allocator: Allocator,
+        lifetime_log2: u8,
+        chunk_size: u8,
+    ) !XMSS {
         const parameter_size = 18;
         const output_size: u8 = if (chunk_size == 1 or chunk_size == 2) 25 else if (chunk_size == 4) 26 else if (chunk_size == 8) 28 else return error.UnsupportedChunkSize;
 
-        const hash = ShaTweakHash(parameter_size, output_size);
+        const hash = ShaTweakHash.init(parameter_size, output_size);
         const prf = try ShaPRF.init(allocator, 32, output_size);
 
-        const num_message_chunks = 256 / chunk_size;
-        const base = 1 << chunk_size;
+        const num_message_chunks = @as(u16, 256) / chunk_size;
+        const base = @as(u8, 1) << @intCast(chunk_size);
         const max_checksum = num_message_chunks * (base - 1);
         const num_checksum_chunks = 1 + @divFloor(std.math.log2_int(usize, max_checksum), chunk_size);
 
@@ -82,7 +75,7 @@ pub const XMSS = struct {
         self.encoding.deinit(self.allocator);
     }
 
-    pub fn generateKeyPair(self: *XMSS) !KeyPair {
+    pub fn generateKeyPair(self: *XMSS) !struct { XMSSPublicKey, XMSSSecretKey } {
         const lifetime = @as(usize, 1) << self.lifetime_log2;
         const num_chains = self.encoding.num_checksum_chunks + self.encoding.message_hash.num_chunks;
 
@@ -115,7 +108,7 @@ pub const XMSS = struct {
 
         var tree = try MerkleTree.build(self.allocator, &self.hash, public_keys);
 
-        const key_pair = KeyPair{
+        const key_pair = struct { XMSSPublicKey, XMSSSecretKey }{
             .public_key = .{
                 .root = try self.allocator.dupe(u8, tree.root()),
                 .hash_parameter = try self.allocator.dupe(u8, self.hash.parameter),
@@ -137,7 +130,7 @@ pub const XMSS = struct {
 
     pub fn sign(
         self: *XMSS,
-        secret_key: *const KeyPair.secret_key,
+        secret_key: XMSSSecretKey,
         epoch: u32,
         message: []const u8,
     ) !Signature {
@@ -167,7 +160,7 @@ pub const XMSS = struct {
         };
     }
 
-    pub fn verify(self: *XMSS, public_key: *const KeyPair.public_key, epoch: u32, message: []const u8, signature: *const Signature) !bool {
+    pub fn verify(self: *XMSS, public_key: *const XMSSPublicKey, epoch: u32, message: []const u8, signature: *const Signature) !bool {
         const chunks = self.encoding.encode(self.allocator, message, signature.randomness, epoch) catch return false;
         defer self.allocator.free(chunks);
 

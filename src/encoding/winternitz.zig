@@ -1,29 +1,19 @@
 const std = @import("std");
-const ShaMessageHash = @import("../message_hash/sha3.zig").ShaMessageHash;
+const MessageHash = @import("../message_hash/message_hash.zig").MessageHash;
 const bytesToChunks = @import("../utils.zig").bytesToChunks;
 
 pub const WinternitzEncoding = struct {
-    message_hash: ShaMessageHash,
+    message_hash: MessageHash,
     num_checksum_chunks: usize,
     
     pub fn init(
-        allocator: std.mem.Allocator,
-        parameter_size: usize,
-        randomness_size: usize,
-        chunk_size: usize,
-        num_message_chunks: usize,  
+        message_hash: MessageHash,  
         num_checksum_chunks: usize
     ) !WinternitzEncoding {
-        const msg_hash = try ShaMessageHash.init(
-            allocator,
-            parameter_size,
-            randomness_size,
-            num_message_chunks,
-            chunk_size
-        );
+
         
         return WinternitzEncoding{
-            .message_hash = msg_hash,
+            .message_hash = message_hash,
             .num_checksum_chunks = num_checksum_chunks,
         };
     }
