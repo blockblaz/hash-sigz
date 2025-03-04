@@ -1,161 +1,154 @@
 const std = @import("std");
-const ShaTweakHash = @import("sha3.zig").ShaTweakHash;
-const TweakableHash = @import("tweakable.zig").TweakableHash;
 
-pub const MerkleTree = struct {
-    height: usize,
-    nodes: [][]u8,
-    hash: *const TweakableHash,
-    
-    pub fn build(
-        allocator: std.mem.Allocator,
-        hash: *const TweakableHash,
-        leaf_hashes: []const []const u8
-    ) !MerkleTree {
-        const num_leaves = leaf_hashes.len;
-        std.debug.assert(num_leaves > 0);
+pub fn MerkleTree(comptime TweakHash: type) type {
+    return struct {
+        height: usize,
+        nodes: [][]u8,
+        hash: TweakHash,
         
-        const height = std.math.log2_int(usize, num_leaves);
-        std.debug.assert(num_leaves == (1 << height));
-        
-        const node_count = (2 * num_leaves) - 1;
-        var nodes = try allocator.alloc([]u8, node_count);
-        
-        for (0..num_leaves) |i| {
-            const leaf_pos = node_count - num_leaves + i;
-            const tweak = hash.treeTweak(0, @as(u32, i));
-            defer allocator.free(tweak);
+        pub fn build(
+            allocator: std.mem.Allocator,
+            hash: TweakHash,
+            leaf_hashes: []const []const u8
+        ) !@This() {
+            const num_leaves = leaf_hashes.len;
+            std.debug.assert(num_leaves > 0);
             
-            nodes[leaf_pos] = hash.hash(tweak, leaf_hashes[i]);
-        }
-        
-        var level: u8 = 1;
-        var level_size: usize = num_leaves / 2;
-        var level_offset: usize = node_count - num_leaves - level_size;
-        
-        while (level_size > 0) {
-            for (0..level_size) |i| {
-                const left_child = nodes[level_offset + level_size + i * 2];
-                const right_child = nodes[level_offset + level_size + i * 2 + 1];
-                
-                var combined = try allocator.alloc(u8, left_child.len + right_child.len);
-                std.mem.copy(u8, combined, left_child);
-                std.mem.copy(u8, combined[left_child.len..], right_child);
-                
-                const tweak = hash.treeTweak(level, @as(u32, i));
+            const height = std.math.log2_int(usize, num_leaves);
+            std.debug.assert(num_leaves == (1 << height));
+            
+            const node_count = (2 * num_leaves) - 1;
+            var nodes = try allocator.alloc([]u8, node_count);
+            
+            for (0..num_leaves) |i| {
+                const leaf_pos = node_count - num_leaves + i;
+                const tweak = try hash.treeTweak(0, @as(u32, @intCast(i)));
                 defer allocator.free(tweak);
                 
-                nodes[level_offset + i] = hash.hash(tweak, combined);
-                allocator.free(combined);
+                nodes[leaf_pos] = try hash.hash(tweak, &[_][]const u8{leaf_hashes[i]});
             }
             
-            level += 1;
-            level_size /= 2;
-            level_offset -= level_size;
-        }
-        
-        return MerkleTree{
-            .height = height,
-            .nodes = nodes,
-            .hash = hash,
-        };
-    }
-    
-    pub fn deinit(self: *MerkleTree, allocator: std.mem.Allocator) void {
-        for (self.nodes) |node| {
-            allocator.free(node);
-        }
-        allocator.free(self.nodes);
-    }
-    
-    pub fn root(self: *const MerkleTree) []const u8 {
-        return self.nodes[0];
-    }
-    
-    pub fn path(
-        self: *const MerkleTree,
-        allocator: std.mem.Allocator,
-        leaf_index: usize
-    ) !MerklePath {
-        std.debug.assert(leaf_index < (1 << self.height));
-        
-        var siblings = try allocator.alloc([]u8, self.height);
-        
-        var current_index = leaf_index;
-        const num_leaves = 1 << self.height;
-        const total_nodes = (2 * num_leaves) - 1;
-        var node_index = total_nodes - num_leaves + current_index;
-        
-        for (0..self.height) |level| {
-            const is_left = current_index % 2 == 0;
-            const sibling_offset = if (is_left) 1 else -1;
+            var level: u8 = 1;
+            var level_size: usize = num_leaves / 2;
+            var level_offset: usize = node_count - num_leaves - level_size;
             
-            siblings[level] = try allocator.dupe(u8, self.nodes[node_index + sibling_offset]);
+            while (level_size > 0) {
+                for (0..level_size) |i| {
+                    const left_child = nodes[level_offset + level_size + i * 2];
+                    const right_child = nodes[level_offset + level_size + i * 2 + 1];
+                    
+                    const combined = [_][]const u8{ left_child, right_child };
+                    
+                    const tweak = try hash.treeTweak(level, @as(u32, @intCast(i)));
+                    defer allocator.free(tweak);
+                    
+                    nodes[level_offset + i] = try hash.hash(tweak, &combined);
+                }
+                
+                level += 1;
+                level_size /= 2;
+                level_offset -= level_size;
+            }
             
-            current_index /= 2;
-            node_index = (node_index - 1) / 2;
+            return @This(){
+                .height = height,
+                .nodes = nodes,
+                .hash = hash,
+            };
         }
         
-        return MerklePath{
-            .siblings = siblings,
-            .leaf_index = leaf_index,
-            .height = self.height,
-            .hash = self.hash,
-        };
-    }
-};
+        pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+            for (self.nodes) |node| {
+                allocator.free(node);
+            }
+            allocator.free(self.nodes);
+        }
+        
+        pub fn root(self: *const @This()) []const u8 {
+            return self.nodes[0];
+        }
+        
+        pub fn path(
+            self: *const @This(),
+            allocator: std.mem.Allocator,
+            leaf_index: usize
+        ) !MerklePath(TweakHash) {
+            std.debug.assert(leaf_index < (1 << self.height));
+            
+            var siblings = try allocator.alloc([]u8, self.height);
+            
+            var current_index = leaf_index;
+            const num_leaves = 1 << self.height;
+            const total_nodes = (2 * num_leaves) - 1;
+            var node_index = total_nodes - num_leaves + current_index;
+            
+            for (0..self.height) |level| {
+                const is_left = current_index % 2 == 0;
+                const sibling_offset = if (is_left) 1 else -1;
+                
+                siblings[level] = try allocator.dupe(u8, self.nodes[node_index + sibling_offset]);
+                
+                current_index /= 2;
+                node_index = (node_index - 1) / 2;
+            }
+            
+            return MerklePath(TweakHash){
+                .siblings = siblings,
+                .leaf_index = leaf_index,
+                .height = self.height,
+                .hash = self.hash,
+            };
+        }
+    };
+}
 
-pub const MerklePath = struct {
-    siblings: [][]u8,
-    leaf_index: usize,
-    height: usize,
-    hash: *const TweakableHash,
-    
-    pub fn deinit(self: *MerklePath, allocator: std.mem.Allocator) void {
-        for (self.siblings) |sibling| {
-            allocator.free(sibling);
+pub fn MerklePath(comptime TweakHash: type) type {
+    return struct {
+        siblings: [][]u8,
+        leaf_index: usize,
+        height: usize,
+        hash: *const TweakHash,
+        
+        pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+            for (self.siblings) |sibling| {
+                allocator.free(sibling);
+            }
+            allocator.free(self.siblings);
         }
-        allocator.free(self.siblings);
-    }
-    
-    pub fn verify(
-        self: *const MerklePath,
-        allocator: std.mem.Allocator,
-        root: []const u8,
-        leaf: []const u8
-    ) !bool {
-        const leaf_tweak = self.hash.treeTweak(0, @as(u32, self.leaf_index));
-        defer allocator.free(leaf_tweak);
-        var current = self.hash.hash(leaf_tweak, leaf);
-        defer allocator.free(current);
         
-        var current_index = self.leaf_index;
-        
-        for (0..self.height) |level| {
-            const is_left = current_index % 2 == 0;
-            const sibling = self.siblings[level];
+        pub fn verify(
+            self: *const @This(),
+            allocator: std.mem.Allocator,
+            root: []const u8,
+            leaf: []const u8
+        ) !bool {
+            const leaf_tweak = try self.hash.treeTweak(0, @as(u32, @intCast(self.leaf_index)));
+            defer allocator.free(leaf_tweak);
+            var current = try self.hash.hash(leaf_tweak, &[_][]const u8{leaf});
+            defer allocator.free(current);
             
-            var combined = try allocator.alloc(u8, current.len + sibling.len);
-            defer allocator.free(combined);
+            var current_index = self.leaf_index;
             
-            if (is_left) {
-                std.mem.copy(u8, combined, current);
-                std.mem.copy(u8, combined[current.len..], sibling);
-            } else {
-                std.mem.copy(u8, combined, sibling);
-                std.mem.copy(u8, combined[sibling.len..], current);
+            for (0..self.height) |level| {
+                const is_left = current_index % 2 == 0;
+                const sibling = self.siblings[level];
+                
+                const combined = if (is_left)
+                    [_][]const u8{ current, sibling }
+                else
+                    [_][]const u8{ sibling, current };
+                
+                const tweak = try self.hash.treeTweak(@as(u8, @intCast(level + 1)), @as(u32, @intCast(current_index / 2)));
+                defer allocator.free(tweak);
+                
+                const parent = try self.hash.hash(tweak, &combined);
+                allocator.free(current);
+                current = parent;
+                
+                current_index /= 2;
             }
             
-            const tweak = self.hash.treeTweak(@as(u8, level + 1), @as(u32, current_index / 2));
-            defer allocator.free(tweak);
-            
-            const parent = self.hash.hash(tweak, combined);
-            allocator.free(current);
-            current = parent;
-            
-            current_index /= 2;
+            return std.mem.eql(u8, current, root);
         }
-        
-        return std.mem.eql(u8, current, root);
-    }
-};
+    };
+}

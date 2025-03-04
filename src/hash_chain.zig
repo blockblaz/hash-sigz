@@ -1,10 +1,10 @@
 const std = @import("std");
 const ShaTweakHash = @import("tweak/sha3.zig").ShaTweakHash;
-const TweakableHash = @import("tweak/tweakable.zig").TweakableHash;
 
 pub fn chain(
     allocator: std.mem.Allocator,
-    hash: TweakableHash,
+    hash: anytype,
+    parameter: []u8,
     epoch: u32,
     chain_index: u16,
     start_pos: u16,
@@ -15,10 +15,10 @@ pub fn chain(
     
     for (0..steps) |j| {
         const pos = @as(u16, @intCast(start_pos)) + @as(u16, @intCast(j)) + 1;
-        const tweak = hash.chainTweak(epoch, chain_index, pos);
+        const tweak = hash.chain_tweak(epoch, chain_index, pos);
         defer allocator.free(tweak);
         
-        const next = hash.hash(tweak, &[_][]const u8{current});
+        const next = hash.hash(parameter, tweak, &[_][]u8{current});
         allocator.free(current);
         current = next;
     }

@@ -1,6 +1,5 @@
 const std = @import("std");
 const Sha3 = std.crypto.hash.sha3.Sha3_256;
-const TweakableHash = @import("tweakable.zig").TweakableHash;
 
 pub const ShaTweak = union(enum) {
     tree: struct {
@@ -11,9 +10,6 @@ pub const ShaTweak = union(enum) {
         epoch: u32,
         chain_index: u16,
         pos_in_chain: u16,
-    },
-    message: struct {
-        epoch: u32,
     },
 
     // FIXME: https://github.com/b-wagn/hash-sig/issues/11
@@ -34,13 +30,6 @@ pub const ShaTweak = union(enum) {
                 bytes[8] = 0x01;
                 return bytes;
             },
-            .message => |m| {
-                var bytes = [5]u8;
-                // ref impl has this in little endian??
-                std.mem.writeIntBig(u32, bytes[0..4], m.epoch);
-                bytes[4] = 0x02;
-                return bytes;
-            },
         };
     }
 };
@@ -49,8 +38,8 @@ pub const ShaTweakHash = struct {
     const Self = @This();
 
     parameter_size: usize,
-    hash_size: usize, 
-    
+    hash_size: usize,
+
     // const Parameter = [PARAMETER_LENGTH]u8;
     // const Domain = [HASH_LEN]u8;
 
@@ -61,7 +50,7 @@ pub const ShaTweakHash = struct {
         };
     }
 
-    fn hash(parameter: []u8, tweak: ShaTweak, msg: []const []u8) []u8 {
+    pub fn hash(_: Self, parameter: []u8, tweak: ShaTweak, msg: []const []u8) []u8 {
         var hasher = Sha3.init(.{});
 
         hasher.update(&parameter);
@@ -79,9 +68,9 @@ pub const ShaTweakHash = struct {
         return result;
     }
 
-    fn rand_parameter(rand: *std.rand.Random) []u8 {
-        var parameter: []u8 = undefined;
-        rand.bytes(&parameter);
+    pub fn rand_parameter(_: Self, parameter_size: comptime_int ) []u8 {
+        const parameter: [parameter_size]u8 = undefined;
+        std.crypto.random.bytes(&parameter);
         return parameter;
     }
 
@@ -91,11 +80,11 @@ pub const ShaTweakHash = struct {
         return domain;
     }
 
-    fn tree_tweak(level: u8, pos_in_level: u32) ShaTweak {
+    pub fn tree_tweak(_: Self, level: u8, pos_in_level: u32) ShaTweak {
         return .{ .tree = .{ .level = level, .pos_in_level = pos_in_level } };
     }
 
-    fn chain_tweak(epoch: u32, chain_index: u16, pos_in_chain: u16) ShaTweak {
+    pub fn chain_tweak(_: Self, epoch: u32, chain_index: u16, pos_in_chain: u16) ShaTweak {
         return .{ .chain = .{ .epoch = epoch, .chain_index = chain_index, .pos_in_chain = pos_in_chain } };
     }
 };

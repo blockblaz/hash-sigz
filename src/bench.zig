@@ -3,7 +3,7 @@ const time = std.time;
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
 const ShaPRF = @import("prf/sha3.zig").ShaPRF;
-const xmss_signature = @import("../src/xmss.zig").XMSS;
+const ShaWinternitzXMSS = @import("../src/xmss.zig").ShaWinternitzXMSS;
 
 pub const BenchConfig = struct {
     name: []const u8,
@@ -15,7 +15,7 @@ pub const BenchConfig = struct {
 
 // Use ZBench?
 pub fn runBenchmark(allocator: Allocator, config: BenchConfig) !void {
-    var signature_scheme = try xmss_signature.init(allocator, config.lifetime_log2, config.chunk_size);
+    var signature_scheme = try ShaWinternitzXMSS.init(allocator, config.lifetime_log2, config.chunk_size, 26);
 
     var random = std.crypto.random;
 
