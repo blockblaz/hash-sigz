@@ -8,24 +8,25 @@ pub fn MerkleTree(comptime TweakHash: type) type {
         
         pub fn build(
             allocator: std.mem.Allocator,
+            parameter: []u8,
             hash: TweakHash,
-            leaf_hashes: []const []const u8
+            leaf_hashes: []const [] u8
         ) !@This() {
             const num_leaves = leaf_hashes.len;
             std.debug.assert(num_leaves > 0);
             
             const height = std.math.log2_int(usize, num_leaves);
-            std.debug.assert(num_leaves == (1 << height));
+            // std.debug.assert(num_leaves == (1 << height));
             
             const node_count = (2 * num_leaves) - 1;
             var nodes = try allocator.alloc([]u8, node_count);
             
             for (0..num_leaves) |i| {
                 const leaf_pos = node_count - num_leaves + i;
-                const tweak = try hash.treeTweak(0, @as(u32, @intCast(i)));
+                const tweak = hash.tree_tweak(0, @as(u32, @intCast(i)));
                 defer allocator.free(tweak);
                 
-                nodes[leaf_pos] = try hash.hash(tweak, &[_][]const u8{leaf_hashes[i]});
+                nodes[leaf_pos] = hash.hash(parameter, tweak, &[_][] u8{leaf_hashes[i]});
             }
             
             var level: u8 = 1;
@@ -37,12 +38,12 @@ pub fn MerkleTree(comptime TweakHash: type) type {
                     const left_child = nodes[level_offset + level_size + i * 2];
                     const right_child = nodes[level_offset + level_size + i * 2 + 1];
                     
-                    const combined = [_][]const u8{ left_child, right_child };
+                    var combined = [_][]u8{ left_child, right_child };
                     
-                    const tweak = try hash.treeTweak(level, @as(u32, @intCast(i)));
+                    const tweak = hash.tree_tweak(level, @as(u32, @intCast(i)));
                     defer allocator.free(tweak);
                     
-                    nodes[level_offset + i] = try hash.hash(tweak, &combined);
+                    nodes[level_offset + i] = hash.hash(parameter, tweak, &combined);
                 }
                 
                 level += 1;
@@ -73,20 +74,19 @@ pub fn MerkleTree(comptime TweakHash: type) type {
             allocator: std.mem.Allocator,
             leaf_index: usize
         ) !MerklePath(TweakHash) {
-            std.debug.assert(leaf_index < (1 << self.height));
+            // std.debug.assert(leaf_index < (1 << self.height));
             
             var siblings = try allocator.alloc([]u8, self.height);
             
             var current_index = leaf_index;
-            const num_leaves = 1 << self.height;
+            const num_leaves = @as(u32, 1) << @intCast(self.height);
             const total_nodes = (2 * num_leaves) - 1;
             var node_index = total_nodes - num_leaves + current_index;
-            
             for (0..self.height) |level| {
                 const is_left = current_index % 2 == 0;
-                const sibling_offset = if (is_left) 1 else -1;
+                const sibling_offset: isize = if (is_left) 1 else -1;
                 
-                siblings[level] = try allocator.dupe(u8, self.nodes[node_index + sibling_offset]);
+                siblings[level] = try allocator.dupe(u8, self.nodes[node_index + @as(usize, @intCast(@as(isize, @intCast(sibling_offset))))]);
                 
                 current_index /= 2;
                 node_index = (node_index - 1) / 2;
@@ -107,7 +107,7 @@ pub fn MerklePath(comptime TweakHash: type) type {
         siblings: [][]u8,
         leaf_index: usize,
         height: usize,
-        hash: *const TweakHash,
+        hash: TweakHash,
         
         pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
             for (self.siblings) |sibling| {

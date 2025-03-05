@@ -28,13 +28,14 @@ pub fn runBenchmark(allocator: Allocator, config: BenchConfig) !void {
     var message: [32]u8 = undefined;
     random.bytes(&message);
 
-    const epoch: u32 = random.uintLessThan(u32, 1 << config.lifetime_log2);
+    const lifetime = @as(u32, 1) << @intCast(config.lifetime_log2);
+    const epoch: u32 = random.uintLessThan(u32, lifetime);
 
     // Sign
     const sign_start = time.nanoTimestamp();
     const sign_iterations = 1000;
     for (0..sign_iterations) |_| {
-        const signature = try signature_scheme.sign(&key_pair.secret_key, epoch, &message, &random);
+        const signature = try signature_scheme.sign(&key_pair.secret_key, epoch, &message);
         defer signature.deinit();
     }
     const sign_time = (time.nanoTimestamp() - sign_start) / sign_iterations;

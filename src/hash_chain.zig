@@ -28,14 +28,17 @@ pub fn chain(
 
 test "chain associativity" {
     var allocator = std.testing.allocator;
-    var hash = try ShaTweakHash.init(allocator, 16, 32); 
-    defer hash.deinit();
+    var hash = ShaTweakHash.init( 16, 32); 
     
     const epoch = 9;
     const chain_index = 20;
     var random = std.crypto.random;
     
-    const start_value = random.bytes(hash.output_size);
+    var start_value = try allocator.alloc(u8, hash.hash_size);
+    random.bytes(&start_value);
+
+    // var s = []u8{10101011001010};
+    // random.bytes(&s);
     
     const total_steps = 16;
     

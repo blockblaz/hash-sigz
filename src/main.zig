@@ -21,4 +21,5 @@ pub fn main() !void {
 test "all tests" {
     _ = @import("utils.zig");
     _ = @import("hash_chain.zig");
+    _=  @import("prf/sha3.zig");
 }

@@ -121,7 +121,7 @@ pub fn XMSS(
             self.message_hash.deinit(self.allocator);
         }
 
-        pub fn generateKeyPair(self: *Self) !struct { PublicKey, SecretKey } {
+        pub fn generateKeyPair(self: *Self) !struct { public_key: PublicKey, secret_key: SecretKey } {
             const lifetime = @as(usize, 1) << @intCast(self.lifetime_log2);
             const num_chains = self.encoding.num_checksum_chunks;
 
@@ -143,7 +143,7 @@ pub fn XMSS(
                 }
 
                 const tweak = self.hash.tree_tweak(0, @as(u32, @intCast(epoch)));
-                public_keys[epoch] = try self.hash.hash(tweak, chain_ends);
+                public_keys[epoch] = self.hash.hash(self.parameter, tweak, chain_ends);
                 self.allocator.free(tweak);
 
                 for (chain_ends) |end| {
@@ -152,17 +152,17 @@ pub fn XMSS(
                 self.allocator.free(chain_ends);
             }
 
-            var tree = try MerkleTree(TweakHash).build(self.allocator, &self.hash, public_keys);
+            var tree = try MerkleTree(TweakHash).build(self.allocator, self.parameter, self.hash, public_keys);
 
             const key_pair = .{
-                PublicKey{
+                .public_key = PublicKey {
                     .root = try self.allocator.dupe(u8, tree.root()),
-                    .hash_parameter = try self.allocator.dupe(u8, self.hash.parameter),
+                    .hash_parameter = try self.allocator.dupe(u8, self.parameter),
                 },
-                SecretKey{
+                .secret_key = SecretKey {
                     .prf_key = prf_key,
                     .tree = tree,
-                    .parameter = try self.allocator.dupe(u8, self.hash.parameter),
+                    .parameter = try self.allocator.dupe(u8, self.parameter),
                 },
             };
 
