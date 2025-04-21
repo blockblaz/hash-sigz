@@ -3,7 +3,7 @@ const Sha3 = std.crypto.hash.sha3.Sha3_256;
 const random = std.crypto.random;
 const bytesToChunks = @import("../utils.zig").bytesToChunks;
 
-const TWEAK_SEPERATOR_MESSAGE = 0x02;
+const TWEAK_SEPERATOR_MESSAGE = [1]u8{0x02};
 
 pub const ShaMessageHash = struct {
     const Self = @This();
@@ -29,9 +29,8 @@ pub const ShaMessageHash = struct {
         allocator.free(self.parameter);
     }
 
-    pub fn generateRandomness(self: *const Self) []u8 {
-        const randomness = std.crypto.random.bytes(self.randomness_size);
-        return randomness;
+    pub fn generateRandomness(_: Self, out: []u8) void {
+        std.crypto.random.bytes(out);
     }
 
     pub fn apply(self: *const Self, allocator: std.mem.Allocator, epoch: u32, randomness: []const u8, message: []const u8) ![]u8 {
@@ -46,7 +45,7 @@ pub const ShaMessageHash = struct {
         std.mem.writeInt(u32, &epoch_bytes, epoch, .big);
         hasher.update(&epoch_bytes);
 
-        hasher.update(TWEAK_SEPERATOR_MESSAGE);
+        hasher.update(&TWEAK_SEPERATOR_MESSAGE);
 
         hasher.update(message);
 
@@ -56,3 +55,21 @@ pub const ShaMessageHash = struct {
         return try bytesToChunks(allocator, &digest, self.chunk_size);
     }
 };
+
+test "ShaMessageHash apply" {
+    const allocator = std.testing.allocator;
+
+    const chunk_size = 2;
+    const parameter_size = 32;
+
+    var message_hash = try ShaMessageHash.init(allocator, parameter_size, 32, chunk_size);
+    defer message_hash.deinit(allocator);
+
+    var randomness: [32]u8 = undefined;
+    message_hash.generateRandomness(&randomness);
+
+    const result = try message_hash.apply(allocator, 1, &randomness, "test");
+    defer allocator.free(result);
+
+    try std.testing.expect(result.len == parameter_size * 8 / chunk_size);
+}

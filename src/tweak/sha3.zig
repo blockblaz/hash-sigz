@@ -50,7 +50,7 @@ pub const ShaTweakHash = struct {
         };
     }
 
-    pub fn hash(self: Self, parameter: []u8, tweak: ShaTweak, msg: []const []u8) []u8 {
+    pub fn hash(self: Self, parameter: []u8, tweak: ShaTweak, msg: []const []const u8, out: []u8) void {
         var hasher = Sha3.init(.{});
 
         hasher.update(parameter);
@@ -65,19 +65,7 @@ pub const ShaTweakHash = struct {
         var result: [32]u8 = undefined;
         hasher.final(&result);
 
-        return result[0..self.hash_size];
-    }
-
-    pub fn rand_parameter(_: Self, parameter_size: comptime_int) []u8 {
-        var parameter: [parameter_size]u8 = undefined;
-        std.crypto.random.bytes(&parameter);
-        return &parameter;
-    }
-
-    fn rand_domain(rand: *std.rand.Random) []u8 {
-        var domain: []u8 = undefined;
-        rand.bytes(&domain);
-        return domain;
+        @memcpy(out, result[0..self.hash_size]);
     }
 
     pub fn tree_tweak(_: Self, level: u8, pos_in_level: u32) ShaTweak {
@@ -89,8 +77,22 @@ pub const ShaTweakHash = struct {
     }
 };
 
-pub const ShaTweak128 = ShaTweakHash(16, 16);
-pub const ShaTweak192 = ShaTweakHash(24, 24);
-pub const ShaTweak256 = ShaTweakHash(32, 32);
+test "ShaTweak128 tree hash" {
+    const hash = ShaTweakHash.init(16, 16);
+    var parameter: [16]u8 = undefined;
+    std.crypto.random.bytes(&parameter);
 
-// TODO:// Tests
+    const tweak = hash.tree_tweak(1, 2);
+    var out: [16]u8 = undefined;
+    hash.hash(&parameter, tweak, &[_][]const u8{"test"}, &out);
+}
+
+test "ShaTweak128 chain hash" {
+    const hash = ShaTweakHash.init(16, 16);
+    var parameter: [16]u8 = undefined;
+    std.crypto.random.bytes(&parameter);
+
+    const tweak = hash.chain_tweak(100, 1, 1);
+    var out: [16]u8 = undefined;
+    hash.hash(&parameter, tweak, &[_][]const u8{"test"}, &out);
+}

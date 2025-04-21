@@ -8,10 +8,7 @@ pub const ShaPRF = struct {
     output_size: usize,
     key: [KEY_SIZE]u8,
 
-    const PRF_DOMAIN_SEPERATOR = [16]u8{
-        0x00, 0x01, 0x12, 0xff, 0x00, 0x01, 0xfa, 0xff, 
-        0x00, 0xaf, 0x12, 0xff, 0x01, 0xfa, 0xff, 0x00
-    };  
+    const PRF_DOMAIN_SEPERATOR = [16]u8{ 0x00, 0x01, 0x12, 0xff, 0x00, 0x01, 0xfa, 0xff, 0x00, 0xaf, 0x12, 0xff, 0x01, 0xfa, 0xff, 0x00 };
 
     pub fn init(output_size: usize) Self {
         // SHA PRF: Output length must be less than 256 bit
@@ -20,13 +17,13 @@ pub const ShaPRF = struct {
         var key: [KEY_SIZE]u8 = undefined;
         std.crypto.random.bytes(&key);
 
-        return Self {
+        return Self{
             .output_size = output_size,
             .key = key,
         };
     }
 
-    pub fn apply(self: Self, epoch: u32, chain_index: u64) []u8 {
+    pub fn apply(self: Self, epoch: u32, chain_index: u64, out: []u8) void {
         var hasher = Sha3.init(.{});
 
         hasher.update(&PRF_DOMAIN_SEPERATOR);
@@ -44,29 +41,65 @@ pub const ShaPRF = struct {
         var result: [32]u8 = undefined;
         hasher.final(&result);
 
-        return result[0..self.output_size];
+        @memcpy(out, result[0..self.output_size]);
     }
 };
 
-test "ShaPRF apply truncation" {
-    const testing = std.testing;
-    // const allocator = testing.allocator;
+test "ShaPRF deterministic for same inputs" {
+    const prf = ShaPRF.init(16);
 
-    const ShaPRF26 = ShaPRF(26);
-    const ShaPRF32 = ShaPRF(32);
+    const epoch = 42;
+    const chain_index = 123;
 
-    var prf26 = ShaPRF26.init();
-    var prf32 = ShaPRF32.init();
+    var result1: [16]u8 = undefined;
+    prf.apply(epoch, chain_index, &result1);
 
-    // Copy same key to both PRFs
-    @memcpy(&prf32.key, &prf26.key);
+    var result2: [16]u8 = undefined;
+    prf.apply(epoch, chain_index, &result2);
 
-    const epoch = 123;
-    const chain_index = 456;
+    try std.testing.expectEqualSlices(u8, &result1, &result2);
+}
 
-    const result26 = prf26.apply(epoch, chain_index);
-    const result32 = prf32.apply(epoch, chain_index);
+test "ShaPRF different outputs for different epochs" {
+    const prf = ShaPRF.init(16);
 
-    // Check that first 26 bytes match
-    try testing.expectEqualSlices(u8, result26[0..26], result32[0..26]);
+    const chain_index = 123;
+
+    var result1: [16]u8 = undefined;
+    prf.apply(1, chain_index, &result1);
+
+    var result2: [16]u8 = undefined;
+    prf.apply(2, chain_index, &result2);
+
+    try std.testing.expect(!std.mem.eql(u8, &result1, &result2));
+}
+
+test "ShaPRF different outputs for different chain indices" {
+    const prf = ShaPRF.init(16);
+
+    const epoch = 42;
+
+    var result1: [16]u8 = undefined;
+    prf.apply(epoch, 1, &result1);
+
+    var result2: [16]u8 = undefined;
+    prf.apply(epoch, 2, &result2);
+
+    try std.testing.expect(!std.mem.eql(u8, &result1, &result2));
+}
+
+test "ShaPRF different instances produce different outputs" {
+    const prf1 = ShaPRF.init(16);
+    const prf2 = ShaPRF.init(16);
+
+    const epoch = 42;
+    const chain_index = 123;
+
+    var result1: [16]u8 = undefined;
+    prf1.apply(epoch, chain_index, &result1);
+
+    var result2: [16]u8 = undefined;
+    prf2.apply(epoch, chain_index, &result2);
+
+    try std.testing.expect(!std.mem.eql(u8, &result1, &result2));
 }

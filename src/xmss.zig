@@ -70,7 +70,7 @@ pub fn XMSS(
         hash: TweakHash,
         prf: PRF,
         encoding: IncomparableEncoding,
-        message_hash: anyerror!MessageHash,
+        message_hash: MessageHash,
         parameter: []u8,
 
         pub fn init(
@@ -182,7 +182,8 @@ pub fn XMSS(
         ) !Signature {
             const path = try secret_key.tree.path(self.allocator, @as(usize, epoch));
 
-            const randomness = try self.message_hash.generateRandomness(self.allocator);
+            const randomness = try self.allocator.alloc(u8, self.message_hash.randomness_size);
+            self.message_hash.generateRandomness(randomness);
             const chunks = try self.encoding.encode(self.allocator, message, randomness, epoch);
 
             const num_chains = chunks.len;
