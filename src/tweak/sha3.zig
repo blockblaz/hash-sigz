@@ -12,15 +12,18 @@ pub const ShaTweak = union(enum) {
         pos_in_chain: u16,
     },
 
-    // FIXME: https://github.com/b-wagn/hash-sig/issues/11
-    pub fn to_bytes(self: ShaTweak) []const u8 {
+    // FIXME: https://github.com/b-wagn/hash-sig/issues/11 - FIXED
+    pub fn to_bytes(self: ShaTweak) [9]u8 {
         switch (self) {
             .tree => |t| {
-                var bytes: [6]u8 = undefined;
+                var bytes: [9]u8 = undefined;
                 std.mem.writeInt(u8, bytes[0..1], t.level, .big);
                 std.mem.writeInt(u32, bytes[1..5], t.pos_in_level, .big);
                 bytes[5] = 0x00;
-                return &bytes;
+                bytes[6] = 0;
+                bytes[7] = 0;
+                bytes[8] = 0;
+                return bytes;
             },
             .chain => |c| {
                 var bytes: [9]u8 = undefined;
@@ -28,9 +31,16 @@ pub const ShaTweak = union(enum) {
                 std.mem.writeInt(u16, bytes[4..6], c.chain_index, .big);
                 std.mem.writeInt(u16, bytes[6..8], c.pos_in_chain, .big);
                 bytes[8] = 0x01;
-                return &bytes;
+                return bytes;
             },
         }
+    }
+
+    pub fn byte_len(self: ShaTweak) usize {
+        return switch (self) {
+            .tree => 6,
+            .chain => 9,
+        };
     }
 };
 
@@ -55,8 +65,11 @@ pub const ShaTweakHash = struct {
 
         hasher.update(parameter);
 
-        const tweak_bytes = tweak.to_bytes();
-        hasher.update(tweak_bytes);
+        // Get tweak bytes by value and get its actual length
+        const tweak_bytes_array = tweak.to_bytes();
+        const tweak_len = tweak.byte_len();
+        // Update hasher with the correct slice of the returned array
+        hasher.update(tweak_bytes_array[0..tweak_len]);
 
         for (msg) |m| {
             hasher.update(m);

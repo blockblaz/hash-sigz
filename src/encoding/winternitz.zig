@@ -16,8 +16,8 @@ pub fn WinternitzEncoding(comptime MessageHash: type) type {
             };
         }
 
-        pub fn encode(self: Self, allocator: std.mem.Allocator, message: []const u8, randomness: []const u8, epoch: u32) ![]u8 {
-            const msg_chunks = try self.message_hash.apply(allocator, epoch, randomness, message);
+        pub fn encode(self: Self, allocator: std.mem.Allocator, parameter: []u8, message: []const u8, randomness: []const u8, epoch: u32) ![]u8 {
+            const msg_chunks = try self.message_hash.apply(allocator, parameter, epoch, randomness, message);
             defer allocator.free(msg_chunks);
 
             const base = @as(u64, 1) << @intCast(self.message_hash.chunk_size);
@@ -50,8 +50,7 @@ test "WinternitzEncoding encode with ShaMessageHash" {
     const randomness_size = 32;
     const chunk_size = 4;
     const num_checksum_chunks = 3;
-    var sha_hash = try ShaMessageHash.init(allocator, parameter_size, randomness_size, chunk_size);
-    defer sha_hash.deinit(allocator);
+    var sha_hash = try ShaMessageHash.init(parameter_size, randomness_size, chunk_size);
 
     const encoding = WinternitzEncoding(ShaMessageHash).init(sha_hash, num_checksum_chunks);
 
@@ -60,7 +59,10 @@ test "WinternitzEncoding encode with ShaMessageHash" {
     sha_hash.generateRandomness(&randomness);
     const epoch: u32 = 12345;
 
-    const result = try encoding.encode(allocator, message, &randomness, epoch);
+    const parameter = try allocator.alloc(u8, parameter_size);
+    std.crypto.random.bytes(parameter);
+    defer allocator.free(parameter);
+    const result = try encoding.encode(allocator, parameter, message, &randomness, epoch);
     defer allocator.free(result);
 
     const digest_len_bits = std.crypto.hash.sha3.Sha3_256.digest_length * 8;
@@ -68,5 +70,5 @@ test "WinternitzEncoding encode with ShaMessageHash" {
     const expected_total_len = expected_msg_chunks_len + num_checksum_chunks;
 
     // Verify the total length of the encoded result
-    try testing.expectEqual(expected_total_len, result.len);        
+    try testing.expectEqual(expected_total_len, result.len);
 }

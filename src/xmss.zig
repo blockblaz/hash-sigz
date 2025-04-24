@@ -1,6 +1,5 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const ShaTweak128 = @import("tweak/sha3.zig").ShaTweak128;
 const ShaTweakHash = @import("tweak/sha3.zig").ShaTweakHash;
 const ShaPRF = @import("prf/sha3.zig").ShaPRF;
 const ShaMessageHash = @import("message_hash/sha3.zig").ShaMessageHash;
@@ -71,13 +70,13 @@ pub fn XMSS(
         prf: PRF,
         encoding: IncomparableEncoding,
         message_hash: MessageHash,
-        parameter: []u8,
 
         pub fn init(
             allocator: Allocator,
             lifetime_log2: u8,
             chunk_size: u8,
             randomness_size: u8,
+            num_checksum_chunks: u8,
         ) !Self {
             const PARAMETER_SIZE = 18;
 
@@ -92,14 +91,10 @@ pub fn XMSS(
 
             const hash = TweakHash.init(PARAMETER_SIZE, output_size);
             const prf = PRF.init(output_size);
-            const parameter = hash.rand_parameter(PARAMETER_SIZE);
+            // const parameter = try allocator.alloc(u8, PARAMETER_SIZE);
+            // std.crypto.random.bytes(parameter);
 
-            const num_message_chunks = @as(u16, 256) / chunk_size;
-            const base = @as(u8, 1) << @intCast(chunk_size);
-            const max_checksum = num_message_chunks * (base - 1);
-            const num_checksum_chunks = 1 + @divFloor(std.math.log2_int(usize, max_checksum), chunk_size);
-
-            const message_hash = try MessageHash.init(allocator, PARAMETER_SIZE, randomness_size, chunk_size);
+            const message_hash = try MessageHash.init(PARAMETER_SIZE, randomness_size, chunk_size);
             const encoding = IncomparableEncoding.init(message_hash, num_checksum_chunks);
 
             return @This(){
@@ -110,66 +105,62 @@ pub fn XMSS(
                 .prf = prf,
                 .encoding = encoding,
                 .message_hash = message_hash,
-                .parameter = parameter,
             };
-        }
-
-        pub fn deinit(self: *Self) void {
-            self.hash.deinit(self.allocator);
-            self.prf.deinit(self.allocator);
-            self.encoding.deinit(self.allocator);
-            self.message_hash.deinit(self.allocator);
         }
 
         pub fn generateKeyPair(self: *Self) !struct { public_key: PublicKey, secret_key: SecretKey } {
-            const lifetime = @as(usize, 1) << @intCast(self.lifetime_log2);
-            const num_chains = self.encoding.num_checksum_chunks;
+            const lifetime = @as(u32, 1) << @intCast(self.lifetime_log2);
+            const num_message_chunks = self.message_hash.parameter_size * 8 / self.chunk_size;
+            const num_chains = num_message_chunks + self.encoding.num_checksum_chunks;
 
-            const prf_key = try self.allocator.dupe(u8, &self.prf.key);
+            const prf_key = try self.allocator.alloc(u8, 32);
+            self.prf.generateKey(prf_key);
+            const parameter = try self.allocator.alloc(u8, self.hash.parameter_size);
+            std.crypto.random.bytes(parameter);
 
-            var public_keys = try self.allocator.alloc([]u8, lifetime);
-            const chain_length = @as(usize, 1) << @intCast(self.chunk_size);
+            var public_key_hashes = try self.allocator.alloc([]u8, lifetime);
+            const chain_length = @as(u16, 1) << @intCast(self.chunk_size);
 
             for (0..lifetime) |epoch| {
                 var chain_ends = try self.allocator.alloc([]u8, num_chains);
-
                 for (0..num_chains) |chain_index| {
-                    const start = self.prf.apply(@as(u32, @intCast(epoch)), @as(u64, @intCast(chain_index)));
-
-                    const end = try chain(self.allocator, &self.hash, self.parameter, @as(u32, @intCast(epoch)), @as(u16, @intCast(chain_index)), 0, chain_length - 1, start);
-
-                    self.allocator.free(start);
-                    chain_ends[chain_index] = end;
+                    const start = try self.allocator.alloc(u8, self.prf.output_size);
+                    self.prf.apply(prf_key, @intCast(epoch), @intCast(chain_index), start);
+                    const steps: u16 = chain_length - 1;
+                    chain(self.hash, parameter, @intCast(epoch), @intCast(chain_index), 0, steps, start);
+                    chain_ends[chain_index] = start;
                 }
-
-                const tweak = self.hash.tree_tweak(0, @as(u32, @intCast(epoch)));
-                public_keys[epoch] = self.hash.hash(self.parameter, tweak, chain_ends);
-                self.allocator.free(tweak);
-
-                for (chain_ends) |end| {
-                    self.allocator.free(end);
-                }
+                const tweak = self.hash.tree_tweak(0, @intCast(epoch));
+                const leaf = try self.allocator.alloc(u8, self.hash.hash_size);
+                self.hash.hash(parameter, tweak, chain_ends, leaf);
+                public_key_hashes[epoch] = leaf;
+                for (chain_ends) |end| self.allocator.free(end);
                 self.allocator.free(chain_ends);
             }
 
-            var tree = try MerkleTree(TweakHash).build(self.allocator, self.parameter, self.hash, public_keys);
+            var tree = try MerkleTree(TweakHash).build(
+                self.allocator,
+                parameter,
+                self.hash,
+                public_key_hashes,
+            );
 
             const key_pair = .{
-                .public_key = PublicKey {
+                .public_key = PublicKey{
                     .root = try self.allocator.dupe(u8, tree.root()),
-                    .hash_parameter = try self.allocator.dupe(u8, self.parameter),
+                    .hash_parameter = try self.allocator.dupe(u8, parameter),
                 },
-                .secret_key = SecretKey {
+                .secret_key = SecretKey{
                     .prf_key = prf_key,
                     .tree = tree,
-                    .parameter = try self.allocator.dupe(u8, self.parameter),
+                    .parameter = parameter,
                 },
             };
 
-            for (public_keys) |pk| {
+            for (public_key_hashes) |pk| {
                 self.allocator.free(pk);
             }
-            self.allocator.free(public_keys);
+            self.allocator.free(public_key_hashes);
 
             return key_pair;
         }
@@ -184,18 +175,18 @@ pub fn XMSS(
 
             const randomness = try self.allocator.alloc(u8, self.message_hash.randomness_size);
             self.message_hash.generateRandomness(randomness);
-            const chunks = try self.encoding.encode(self.allocator, message, randomness, epoch);
+            const chunks = try self.encoding.encode(self.allocator, secret_key.parameter, message, randomness, epoch);
 
-            const num_chains = chunks.len;
+            const num_message_chunks = self.message_hash.parameter_size * 8 / self.chunk_size;
+            const num_chains = num_message_chunks + self.encoding.num_checksum_chunks;
+
             var chain_values = try self.allocator.alloc([]u8, num_chains);
-
             for (0..num_chains) |i| {
-                const start = try self.prf.apply(self.allocator, epoch, @as(u64, @intCast(i)));
-
-                const steps = chunks[i];
-                chain_values[i] = try chain(self.allocator, &self.hash, epoch, @as(u16, @intCast(i)), 0, steps, start);
-
-                self.allocator.free(start);
+                const start = try self.allocator.alloc(u8, self.prf.output_size);
+                self.prf.apply(secret_key.prf_key, epoch, @as(u64, @intCast(i)), start);
+                const steps: u16 = @as(u16, @intCast(chunks[i]));
+                chain(self.hash, secret_key.parameter, epoch, @as(u16, @intCast(i)), 0, steps, start);
+                chain_values[i] = start;
             }
 
             self.allocator.free(chunks);
@@ -208,31 +199,34 @@ pub fn XMSS(
         }
 
         pub fn verify(self: *Self, public_key: *const PublicKey, epoch: u32, message: []const u8, signature: *const Signature) !bool {
-            const chunks = try self.encoding.encode(self.allocator, message, signature.randomness, epoch);
+            const chunks = try self.encoding.encode(self.allocator, public_key.hash_parameter, message, signature.randomness, epoch);
             defer self.allocator.free(chunks);
 
-            const num_chains = chunks.len;
-            const chain_length = @as(usize, 1) << self.chunk_size;
+            const num_message_chunks = self.message_hash.parameter_size * 8 / self.chunk_size;
+            const num_chains = num_message_chunks + self.encoding.num_checksum_chunks;
+            const chain_length = @as(usize, 1) << @intCast(self.chunk_size);
             var chain_ends = try self.allocator.alloc([]u8, num_chains);
             defer {
-                for (chain_ends) |end| {
-                    self.allocator.free(end);
-                }
+                for (chain_ends) |end_slice| self.allocator.free(end_slice);
                 self.allocator.free(chain_ends);
             }
 
             for (0..num_chains) |i| {
-                const steps_left = chain_length - 1 - chunks[i];
-                chain_ends[i] = try chain(self.allocator, &self.hash, epoch, @as(u16, @intCast(i)), chunks[i], steps_left, signature.chain_values[i]);
+                const end = try self.allocator.dupe(u8, signature.chain_values[i]);
+
+                const steps_left: u16 = @intCast(chain_length - 1 - chunks[i]);
+                chain(self.hash, public_key.hash_parameter, epoch, @as(u16, @intCast(i)), @as(u16, chunks[i]), steps_left, end);
+                chain_ends[i] = end;
             }
 
-            const tweak = try self.hash.treeTweak(0, epoch);
-            defer self.allocator.free(tweak);
+            const leaf_tweak = self.hash.tree_tweak(0, epoch);
+            const leaf_hash_recomputed = try self.allocator.alloc(u8, self.hash.hash_size);
+            defer self.allocator.free(leaf_hash_recomputed);
+            self.hash.hash(public_key.hash_parameter, leaf_tweak, chain_ends, leaf_hash_recomputed);
 
-            const computed_pk = try self.hash.hash(tweak, chain_ends);
-            defer self.allocator.free(computed_pk);
+            const is_valid = try signature.path.verify(self.allocator, public_key.hash_parameter, public_key.root, leaf_hash_recomputed);
 
-            return try signature.path.verify(self.allocator, public_key.root, computed_pk);
+            return is_valid;
         }
     };
 }
@@ -241,3 +235,27 @@ pub const ShaWinternitzXMSS = XMSS(ShaTweakHash, ShaPRF, ShaMessageHash, Wintern
 // pub const ShaTargetSumXMSS = XMSS(ShaTweakHash, ShaPRF, ShaMessageHash, TargetSumEncoding);
 // pub const PoseidonWinternitzXMSS = XMSS(PoseidonTweakHash, PoseidonPRF, PoseidonMessageHash, WinternitzEncoding);
 // pub const PoseidonTargetSumXMSS = XMSS(PoseidonTweakHash, PoseidonPRF, PoseidonMessageHash, TargetSumEncoding);
+
+test "ShaWinternitzXMSS sign/verify small" {
+    const allocator = std.testing.allocator;
+
+    const lifetime_log2: u8 = 4;
+    const chunk_size: u8 = 1;
+
+    var xmss = try ShaWinternitzXMSS.init(allocator, lifetime_log2, chunk_size, 26, 8);
+
+    var key_pair = try xmss.generateKeyPair();
+    defer key_pair.public_key.deinit(allocator);
+    defer key_pair.secret_key.deinit(allocator);
+
+    var message: [32]u8 = undefined;
+    std.crypto.random.bytes(&message);
+
+    // should be < lifetime
+    const epoch = 12;
+    var signature = try xmss.sign(&key_pair.secret_key, @intCast(epoch), &message);
+    defer signature.deinit(allocator);
+
+    const valid = try xmss.verify(&key_pair.public_key, @intCast(epoch), &message, &signature);
+    try std.testing.expect(valid);
+}

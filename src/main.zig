@@ -2,6 +2,10 @@ const std = @import("std");
 const bench = @import("bench.zig");
 
 pub fn main() !void {
+    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // const allocator = arena.allocator();
+    // defer arena.deinit();
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
@@ -13,6 +17,7 @@ pub fn main() !void {
             .name = "SHA-Winternitz-L18-W1",
             .lifetime_log2 = 18,
             .chunk_size = 1,
+            .num_checksum_chunks = 8,
         },
     };
 
@@ -29,4 +34,5 @@ test "all tests" {
     _ = @import("prf/sha3.zig");
     _ = @import("message_hash/sha3.zig");
     _ = @import("encoding/winternitz.zig");
+    _ = @import("tweak/tree.zig");
 }
