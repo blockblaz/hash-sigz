@@ -1,11 +1,17 @@
 .{
-    .name = "hash-sigz",
+    .name = .hash_sigz,
     .version = "0.0.0",
-    .dependencies = .{},
+    .fingerprint = 0x3a7712330d9c0744,
+    .minimum_zig_version = "0.14.0",
+    .dependencies = .{
+        .ssz = .{
+            .url = "../ssz.zig",
+            .hash = "ssz-0.0.3-Lfwd6_4MjwEE2CCciIifXBgCSvSg2796oO_dMnwlOfgK",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
         "src",
-        "README.md",
     },
 }

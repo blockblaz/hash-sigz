@@ -33,6 +33,11 @@ pub fn XMSS(
             }
         };
 
+        pub const KeyPair = struct {
+            public_key: PublicKey,
+            secret_key: SecretKey,
+        };
+
         pub const PublicKey = struct {
             // Domain
             root: []u8,
@@ -85,7 +90,7 @@ pub fn XMSS(
             };
         }
 
-        pub fn generateKeyPair(self: *const Self) !struct { public_key: PublicKey, secret_key: SecretKey } {
+        pub fn generateKeyPair(self: *const Self) !KeyPair {
             const lifetime = @as(u32, 1) << @intCast(self.lifetime_log2);
             const num_chains = self.encoding.num_chunks;
 
@@ -121,7 +126,7 @@ pub fn XMSS(
                 public_key_hashes,
             );
 
-            const key_pair = .{
+            const key_pair = KeyPair{
                 .public_key = PublicKey{
                     .root = try self.allocator.dupe(u8, tree.root()),
                     .hash_parameter = try self.allocator.dupe(u8, parameter),

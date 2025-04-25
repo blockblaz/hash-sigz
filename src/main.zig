@@ -8,9 +8,11 @@ const WinternitzEncoding = @import("encoding/winternitz.zig").WinternitzEncoding
 const ShaMessageHash = @import("message_hash/sha3.zig").ShaMessageHash;
 const ShaPRF = @import("prf/sha3.zig").ShaPRF;
 pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const allocator = arena.allocator();
-    defer arena.deinit();
+    const allocator = std.heap.smp_allocator;
+
+    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // const allocator = arena.allocator();
+    // defer arena.deinit();
 
     // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     // const allocator = gpa.allocator();

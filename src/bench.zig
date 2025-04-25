@@ -3,8 +3,8 @@ const time = std.time;
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
 const ShaPRF = @import("prf/sha3.zig").ShaPRF;
-const ShaWinternitzXMSS = @import("../src/xmss.zig").ShaWinternitzXMSS;
-const ShaTargetSumXMSS = @import("../src/xmss.zig").ShaTargetSumXMSS;
+const ShaWinternitzXMSS = @import("../src/lib.zig").ShaWinternitzXMSS;
+const ShaTargetSumXMSS = @import("../src/lib.zig").ShaTargetSumXMSS;
 const XMSS = @import("../src/xmss.zig").XMSS;
 
 pub const BenchConfig = struct {
