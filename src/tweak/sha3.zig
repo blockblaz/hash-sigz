@@ -12,14 +12,13 @@ pub const ShaTweak = union(enum) {
         pos_in_chain: u16,
     },
 
-    // FIXME: https://github.com/b-wagn/hash-sig/issues/11 - FIXED
     pub fn to_bytes(self: ShaTweak) [9]u8 {
         switch (self) {
             .tree => |t| {
                 var bytes: [9]u8 = undefined;
-                std.mem.writeInt(u8, bytes[0..1], t.level, .big);
-                std.mem.writeInt(u32, bytes[1..5], t.pos_in_level, .big);
-                bytes[5] = 0x00;
+                bytes[0] = 0x00;
+                std.mem.writeInt(u8, bytes[1..2], t.level, .big);
+                std.mem.writeInt(u32, bytes[2..6], t.pos_in_level, .big);
                 bytes[6] = 0;
                 bytes[7] = 0;
                 bytes[8] = 0;
@@ -27,10 +26,10 @@ pub const ShaTweak = union(enum) {
             },
             .chain => |c| {
                 var bytes: [9]u8 = undefined;
-                std.mem.writeInt(u32, bytes[0..4], c.epoch, .big);
-                std.mem.writeInt(u16, bytes[4..6], c.chain_index, .big);
-                std.mem.writeInt(u16, bytes[6..8], c.pos_in_chain, .big);
-                bytes[8] = 0x01;
+                bytes[0] = 0x01;
+                std.mem.writeInt(u32, bytes[1..5], c.epoch, .big);
+                std.mem.writeInt(u16, bytes[5..7], c.chain_index, .big);
+                std.mem.writeInt(u16, bytes[7..9], c.pos_in_chain, .big);
                 return bytes;
             },
         }

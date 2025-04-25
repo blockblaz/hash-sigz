@@ -11,7 +11,7 @@ pub fn chain(
     msg: []u8
 ) void {
     for (0..steps) |j| {
-        const pos = @as(u16, @intCast(start_pos)) + @as(u16, @intCast(j)) + 1;
+        const pos = start_pos + @as(u16, @intCast(j)) + 1;
         const tweak = hash.chain_tweak(epoch, chain_index, pos);
 
         hash.hash(parameter, tweak, &[_][]u8{msg}, msg);
