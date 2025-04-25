@@ -7,12 +7,16 @@ pub fn WinternitzEncoding(comptime MessageHash: type) type {
         const Self = @This();
 
         message_hash: MessageHash,
+        num_chunks: usize,
         num_checksum_chunks: usize,
+        max_tries: usize,
 
         pub fn init(message_hash: MessageHash, num_checksum_chunks: usize) Self {
             return Self{
                 .message_hash = message_hash,
+                .num_chunks = message_hash.message_hash_len * 8 / message_hash.chunk_size + num_checksum_chunks,
                 .num_checksum_chunks = num_checksum_chunks,
+                .max_tries = 1,
             };
         }
 
@@ -50,7 +54,8 @@ test "WinternitzEncoding encode with ShaMessageHash" {
     const randomness_size = 32;
     const chunk_size = 4;
     const num_checksum_chunks = 3;
-    var sha_hash = try ShaMessageHash.init(parameter_size, randomness_size, chunk_size);
+    const message_hash_len = 18;
+    var sha_hash = ShaMessageHash.init(parameter_size, randomness_size, chunk_size, message_hash_len);
 
     const encoding = WinternitzEncoding(ShaMessageHash).init(sha_hash, num_checksum_chunks);
 
@@ -65,8 +70,7 @@ test "WinternitzEncoding encode with ShaMessageHash" {
     const result = try encoding.encode(allocator, parameter, message, &randomness, epoch);
     defer allocator.free(result);
 
-    const digest_len_bits = std.crypto.hash.sha3.Sha3_256.digest_length * 8;
-    const expected_msg_chunks_len = @divTrunc(digest_len_bits + chunk_size - 1, chunk_size);
+    const expected_msg_chunks_len = @divTrunc(message_hash_len * 8 + chunk_size - 1, chunk_size);
     const expected_total_len = expected_msg_chunks_len + num_checksum_chunks;
 
     // Verify the total length of the encoded result

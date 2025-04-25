@@ -7,8 +7,6 @@ pub fn bytesToChunks(
 ) ![]u8 {
     std.debug.assert(chunk_size == 1 or chunk_size == 2 or chunk_size == 4 or chunk_size == 8);
 
-    // if (chunk_size == 8) return bytes;
-
     const chunks_per_byte = 8 / chunk_size;
     const num_chunks = bytes.len * chunks_per_byte;
     var chunks = try allocator.alloc(u8, num_chunks);
@@ -19,8 +17,8 @@ pub fn bytesToChunks(
 
     var chunk_idx: usize = 0;
 
-    const mask: u8 = (@as(u8, 1) << @truncate(chunk_size)) - 1;
-    const shift: u3 = @truncate(chunk_size);
+    const mask: u8 = (@as(u8, 1) << @intCast(chunk_size)) - 1;
+    const shift: u3 = @intCast(chunk_size);
 
     for (bytes) |*byte| {
         for (0..chunks_per_byte) |_| {

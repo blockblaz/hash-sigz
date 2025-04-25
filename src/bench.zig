@@ -4,25 +4,33 @@ const Allocator = std.mem.Allocator;
 const testing = std.testing;
 const ShaPRF = @import("prf/sha3.zig").ShaPRF;
 const ShaWinternitzXMSS = @import("../src/xmss.zig").ShaWinternitzXMSS;
+const ShaTargetSumXMSS = @import("../src/xmss.zig").ShaTargetSumXMSS;
+const XMSS = @import("../src/xmss.zig").XMSS;
 
 pub const BenchConfig = struct {
     name: []const u8,
     lifetime_log2: u8,
     chunk_size: u8,
     num_checksum_chunks: u8,
-    // encoding_type: enum { Winternitz, TargetSum },
-    // target_sum_offset_percent: ?u8,
+    parameter_size: u8,
+    randomness_size: u8,
+    message_hash_len: u8,
+    hash_size: u8,
+    encoding_type: enum { Winternitz, TargetSum },
+    target_sum: ?usize,
 };
 
 // Use ZBench?
-pub fn runBenchmark(allocator: Allocator, config: BenchConfig) !void {
-    var signature_scheme = try ShaWinternitzXMSS.init(allocator, config.lifetime_log2, config.chunk_size, 26, config.num_checksum_chunks);
-
+pub fn runBenchmark(
+    allocator: Allocator,
+    config: BenchConfig,
+    xmss: anytype,
+) !void {
     var random = std.crypto.random;
 
     // KeyGen
     const key_gen_start = time.nanoTimestamp();
-    var key_pair = try signature_scheme.generateKeyPair();
+    var key_pair = try xmss.generateKeyPair();
     const key_gen_time = time.nanoTimestamp() - key_gen_start;
     defer key_pair.public_key.deinit(allocator);
     defer key_pair.secret_key.deinit(allocator);
@@ -37,7 +45,7 @@ pub fn runBenchmark(allocator: Allocator, config: BenchConfig) !void {
     const sign_start = time.nanoTimestamp();
     const sign_iterations = 1000;
     for (0..sign_iterations) |_| {
-        var signature = try signature_scheme.sign(&key_pair.secret_key, epoch, &message);
+        var signature = try xmss.sign(&key_pair.secret_key, epoch, &message);
         defer signature.deinit(allocator);
     }
     const sign_time = @divTrunc((time.nanoTimestamp() - sign_start), sign_iterations);
@@ -45,11 +53,12 @@ pub fn runBenchmark(allocator: Allocator, config: BenchConfig) !void {
     // Verify
     const verify_start = time.nanoTimestamp();
     const verify_iterations = 1000;
-    var signature = try signature_scheme.sign(&key_pair.secret_key, epoch, &message);
-    defer signature.deinit(allocator);
+    // Re-sign once to get a signature for verification loop (signing is benchmarked above)
+    var signature_for_verify = try xmss.sign(&key_pair.secret_key, epoch, &message);
+    defer signature_for_verify.deinit(allocator);
 
     for (0..verify_iterations) |_| {
-        const is_valid = try signature_scheme.verify(&key_pair.public_key, epoch, &message, &signature);
+        const is_valid = try xmss.verify(&key_pair.public_key, epoch, &message, &signature_for_verify);
         std.debug.assert(is_valid);
     }
     const verify_time = @divTrunc((time.nanoTimestamp() - verify_start), verify_iterations);

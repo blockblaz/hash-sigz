@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 const ShaTweakHash = @import("tweak/sha3.zig").ShaTweakHash;
 const ShaPRF = @import("prf/sha3.zig").ShaPRF;
 const ShaMessageHash = @import("message_hash/sha3.zig").ShaMessageHash;
-// const MessageHash = @import("message_hash/message_hash.zig").MessageHash;
+const TargetSumEncoding = @import("encoding/target_sum.zig").TargetSumEncoding;
 const WinternitzEncoding = @import("encoding/winternitz.zig").WinternitzEncoding;
 const MerkleTree = @import("tweak/tree.zig").MerkleTree;
 const MerklePath = @import("tweak/tree.zig").MerklePath;
@@ -65,7 +65,6 @@ pub fn XMSS(
 
         allocator: Allocator,
         lifetime_log2: u8,
-        chunk_size: u8,
         hash: TweakHash,
         prf: PRF,
         encoding: IncomparableEncoding,
@@ -74,33 +73,14 @@ pub fn XMSS(
         pub fn init(
             allocator: Allocator,
             lifetime_log2: u8,
-            chunk_size: u8,
-            randomness_size: u8,
-            num_checksum_chunks: u8,
-        ) !Self {
-            const PARAMETER_SIZE = 18;
-
-            const output_size: u8 = if (chunk_size == 1 or chunk_size == 2)
-                25
-            else if (chunk_size == 4)
-                26
-            else if (chunk_size == 8)
-                28
-            else
-                return error.UnsupportedChunkSize;
-
-            const hash = TweakHash.init(PARAMETER_SIZE, output_size);
-            const prf = PRF.init(output_size);
-            // const parameter = try allocator.alloc(u8, PARAMETER_SIZE);
-            // std.crypto.random.bytes(parameter);
-
-            const message_hash = try MessageHash.init(PARAMETER_SIZE, randomness_size, chunk_size);
-            const encoding = IncomparableEncoding.init(message_hash, num_checksum_chunks);
-
+            hash: TweakHash,
+            message_hash: MessageHash,
+            prf: PRF,
+            encoding: IncomparableEncoding,
+        ) Self {
             return @This(){
                 .allocator = allocator,
                 .lifetime_log2 = lifetime_log2,
-                .chunk_size = chunk_size,
                 .hash = hash,
                 .prf = prf,
                 .encoding = encoding,
@@ -108,10 +88,9 @@ pub fn XMSS(
             };
         }
 
-        pub fn generateKeyPair(self: *Self) !struct { public_key: PublicKey, secret_key: SecretKey } {
+        pub fn generateKeyPair(self: *const Self) !struct { public_key: PublicKey, secret_key: SecretKey } {
             const lifetime = @as(u32, 1) << @intCast(self.lifetime_log2);
-            const num_message_chunks = self.message_hash.parameter_size * 8 / self.chunk_size;
-            const num_chains = num_message_chunks + self.encoding.num_checksum_chunks;
+            const num_chains = self.encoding.num_chunks;
 
             const prf_key = try self.allocator.alloc(u8, 32);
             self.prf.generateKey(prf_key);
@@ -119,7 +98,7 @@ pub fn XMSS(
             std.crypto.random.bytes(parameter);
 
             var public_key_hashes = try self.allocator.alloc([]u8, lifetime);
-            const chain_length = @as(u16, 1) << @intCast(self.chunk_size);
+            const chain_length = @as(u16, 1) << @intCast(self.message_hash.chunk_size);
 
             for (0..lifetime) |epoch| {
                 var chain_ends = try self.allocator.alloc([]u8, num_chains);
@@ -166,19 +145,40 @@ pub fn XMSS(
         }
 
         pub fn sign(
-            self: *Self,
+            self: *const Self,
             secret_key: *const SecretKey,
             epoch: u32,
             message: []const u8,
         ) !Signature {
             const path = try secret_key.tree.path(self.allocator, @as(usize, epoch));
 
-            const randomness = try self.allocator.alloc(u8, self.message_hash.randomness_size);
-            self.message_hash.generateRandomness(randomness);
-            const chunks = try self.encoding.encode(self.allocator, secret_key.parameter, message, randomness, epoch);
+            const max_tries = self.encoding.max_tries;
+            var attempts: usize = 0;
+            var chunks: []u8 = undefined;
+            var randomness: []u8 = undefined;
+            while (attempts < max_tries) : (attempts += 1) {
+                const curr_randomness = try self.allocator.alloc(u8, self.message_hash.randomness_size);
+                self.message_hash.generateRandomness(curr_randomness);
+                const curr_chunks = self.encoding.encode(
+                    self.allocator,
+                    secret_key.parameter,
+                    message,
+                    curr_randomness,
+                    epoch,
+                );
 
-            const num_message_chunks = self.message_hash.parameter_size * 8 / self.chunk_size;
-            const num_chains = num_message_chunks + self.encoding.num_checksum_chunks;
+                if (curr_chunks) |result_chunks| {
+                    chunks = result_chunks;
+                    randomness = curr_randomness;
+                    break;
+                } else |e| {
+                    if (e == error.TargetSumMismatch) {
+                        continue;
+                    }
+                }
+            }
+
+            const num_chains = self.encoding.num_chunks;
 
             var chain_values = try self.allocator.alloc([]u8, num_chains);
             for (0..num_chains) |i| {
@@ -198,13 +198,12 @@ pub fn XMSS(
             };
         }
 
-        pub fn verify(self: *Self, public_key: *const PublicKey, epoch: u32, message: []const u8, signature: *const Signature) !bool {
+        pub fn verify(self: *const Self, public_key: *const PublicKey, epoch: u32, message: []const u8, signature: *const Signature) !bool {
             const chunks = try self.encoding.encode(self.allocator, public_key.hash_parameter, message, signature.randomness, epoch);
             defer self.allocator.free(chunks);
 
-            const num_message_chunks = self.message_hash.parameter_size * 8 / self.chunk_size;
-            const num_chains = num_message_chunks + self.encoding.num_checksum_chunks;
-            const chain_length = @as(usize, 1) << @intCast(self.chunk_size);
+            const num_chains = self.encoding.num_chunks;
+            const chain_length = @as(usize, 1) << @intCast(self.message_hash.chunk_size);
             var chain_ends = try self.allocator.alloc([]u8, num_chains);
             defer {
                 for (chain_ends) |end_slice| self.allocator.free(end_slice);
@@ -232,7 +231,7 @@ pub fn XMSS(
 }
 
 pub const ShaWinternitzXMSS = XMSS(ShaTweakHash, ShaPRF, ShaMessageHash, WinternitzEncoding(ShaMessageHash));
-// pub const ShaTargetSumXMSS = XMSS(ShaTweakHash, ShaPRF, ShaMessageHash, TargetSumEncoding);
+pub const ShaTargetSumXMSS = XMSS(ShaTweakHash, ShaPRF, ShaMessageHash, TargetSumEncoding(ShaMessageHash));
 // pub const PoseidonWinternitzXMSS = XMSS(PoseidonTweakHash, PoseidonPRF, PoseidonMessageHash, WinternitzEncoding);
 // pub const PoseidonTargetSumXMSS = XMSS(PoseidonTweakHash, PoseidonPRF, PoseidonMessageHash, TargetSumEncoding);
 

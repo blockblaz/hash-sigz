@@ -11,20 +11,16 @@ pub const ShaMessageHash = struct {
     parameter_size: usize,
     randomness_size: usize,
     chunk_size: usize,
-    // parameter: []u8,
+    message_hash_len: usize,
 
-    pub fn init(parameter_size: usize, randomness_size: usize, chunk_size: usize) !Self {
-        // const parameter = try allocator.alloc(u8, parameter_size);
-        // std.crypto.random.bytes(parameter);
-
+    pub fn init(parameter_size: usize, randomness_size: usize, chunk_size: usize, message_hash_len: usize) Self {
         return Self{
             .parameter_size = parameter_size,
             .randomness_size = randomness_size,
             .chunk_size = chunk_size,
-            // .parameter = parameter,
+            .message_hash_len = message_hash_len,
         };
     }
-
 
     pub fn generateRandomness(_: Self, out: []u8) void {
         std.crypto.random.bytes(out);
@@ -46,10 +42,10 @@ pub const ShaMessageHash = struct {
 
         hasher.update(message);
 
-        var digest: [Sha3.digest_length]u8 = undefined;
+        var digest: [32]u8 = undefined;
         hasher.final(&digest);
 
-        return try bytesToChunks(allocator, &digest, self.chunk_size);
+        return try bytesToChunks(allocator, digest[0..self.message_hash_len], self.chunk_size);
     }
 };
 
@@ -58,8 +54,8 @@ test "ShaMessageHash apply" {
 
     const chunk_size = 2;
     const parameter_size = 32;
-
-    var message_hash = try ShaMessageHash.init(parameter_size, 32, chunk_size);
+    const message_hash_len = 18;
+    var message_hash = ShaMessageHash.init(parameter_size, 32, chunk_size, message_hash_len);
 
     var randomness: [32]u8 = undefined;
     message_hash.generateRandomness(&randomness);
@@ -71,5 +67,6 @@ test "ShaMessageHash apply" {
     const result = try message_hash.apply(allocator, parameter, 1, &randomness, "test");
     defer allocator.free(result);
 
-    try std.testing.expect(result.len == parameter_size * 8 / chunk_size);
+
+    try std.testing.expect(result.len == message_hash_len * 8 / chunk_size);
 }

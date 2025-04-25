@@ -14,7 +14,6 @@ pub fn MerkleTree(comptime TweakHash: type) type {
             std.debug.assert(num_leaves > 0);
             std.debug.assert(std.math.isPowerOfTwo(num_leaves));
             const height = std.math.log2_int(usize, num_leaves);
-            // std.debug.assert(num_leaves == (1 << height));
 
             const node_count = (2 * num_leaves) - 1;
             var nodes = try allocator.alloc([]u8, node_count);

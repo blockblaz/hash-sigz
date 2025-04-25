@@ -1,14 +1,20 @@
 const std = @import("std");
 const bench = @import("bench.zig");
-
+const ShaTweakHash = @import("tweak/sha3.zig").ShaTweakHash;
+const ShaWinternitzXMSS = @import("xmss.zig").ShaWinternitzXMSS;
+const ShaTargetSumXMSS = @import("xmss.zig").ShaTargetSumXMSS;
+const TargetSumEncoding = @import("encoding/target_sum.zig").TargetSumEncoding;
+const WinternitzEncoding = @import("encoding/winternitz.zig").WinternitzEncoding;
+const ShaMessageHash = @import("message_hash/sha3.zig").ShaMessageHash;
+const ShaPRF = @import("prf/sha3.zig").ShaPRF;
 pub fn main() !void {
-    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    // const allocator = arena.allocator();
-    // defer arena.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena.allocator();
+    defer arena.deinit();
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // const allocator = gpa.allocator();
+    // defer _ = gpa.deinit();
 
     // Poseidon-TargetSum-L20-W2-11
     // Look into Poseidon Security + Perf Constraints
@@ -18,12 +24,44 @@ pub fn main() !void {
             .lifetime_log2 = 18,
             .chunk_size = 1,
             .num_checksum_chunks = 8,
+            .parameter_size = 18,
+            .randomness_size = 20,
+            .message_hash_len = 18,
+            .hash_size = 18,
+            .encoding_type = .Winternitz,
+            .target_sum = null,
+        },
+        .{
+            .name = "SHA-TargetSumNoOffset-L18-W1",
+            .lifetime_log2 = 18,
+            .chunk_size = 1,
+            .num_checksum_chunks = 8,
+            .parameter_size = 18,
+            .randomness_size = 32,
+            .message_hash_len = 18,
+            .hash_size = 18,
+            .encoding_type = .TargetSum,
+            .target_sum = 70,
         },
     };
 
     std.debug.print("Running XMSS benchmarks.\n", .{});
     for (configs) |config| {
-        try bench.runBenchmark(allocator, config);
+        if (config.encoding_type == .Winternitz) {
+            const tweak_hash = ShaTweakHash.init(config.parameter_size, config.hash_size);
+            const prf = ShaPRF.init(config.hash_size);
+            const message_hash = ShaMessageHash.init(config.parameter_size, config.randomness_size, config.chunk_size, config.message_hash_len);
+            const encoding = WinternitzEncoding(ShaMessageHash).init(message_hash, config.num_checksum_chunks);
+            const xmss = ShaWinternitzXMSS.init(allocator, config.lifetime_log2, tweak_hash, message_hash, prf, encoding);
+            try bench.runBenchmark(allocator, config, xmss);
+        } else if (config.encoding_type == .TargetSum) {
+            const tweak_hash = ShaTweakHash.init(config.parameter_size, config.hash_size);
+            const prf = ShaPRF.init(config.hash_size);
+            const message_hash = ShaMessageHash.init(config.parameter_size, config.randomness_size, config.chunk_size, config.message_hash_len);
+            const encoding = TargetSumEncoding(ShaMessageHash).init(message_hash, config.target_sum.?);
+            const xmss = ShaTargetSumXMSS.init(allocator, config.lifetime_log2, tweak_hash, message_hash, prf, encoding);
+            try bench.runBenchmark(allocator, config, xmss);
+        }
     }
 }
 
@@ -34,5 +72,6 @@ test "all tests" {
     _ = @import("prf/sha3.zig");
     _ = @import("message_hash/sha3.zig");
     _ = @import("encoding/winternitz.zig");
+    _ = @import("encoding/target_sum.zig");
     _ = @import("tweak/tree.zig");
 }
