@@ -1,8 +1,8 @@
 const std = @import("std");
 const bench = @import("bench.zig");
 const ShaTweakHash = @import("tweak/sha3.zig").ShaTweakHash;
-const ShaWinternitzXMSS = @import("xmss.zig").ShaWinternitzXMSS;
-const ShaTargetSumXMSS = @import("xmss.zig").ShaTargetSumXMSS;
+const ShaWinternitzXMSS = @import("lib.zig").ShaWinternitzXMSS;
+const ShaTargetSumXMSS = @import("lib.zig").ShaTargetSumXMSS;
 const TargetSumEncoding = @import("encoding/target_sum.zig").TargetSumEncoding;
 const WinternitzEncoding = @import("encoding/winternitz.zig").WinternitzEncoding;
 const ShaMessageHash = @import("message_hash/sha3.zig").ShaMessageHash;
@@ -74,4 +74,31 @@ test "all tests" {
     _ = @import("encoding/winternitz.zig");
     _ = @import("encoding/target_sum.zig");
     _ = @import("tweak/tree.zig");
+}
+
+test "ShaWinternitzXMSS sign/verify small" {
+    const allocator = std.testing.allocator;
+
+    const lifetime_log2: u8 = 4;
+
+    const hash = ShaTweakHash.init(26, 26);
+    const prf = ShaPRF.init(26);
+    const message_hash = ShaMessageHash.init(26, 20, 1, 26);
+    const encoding = WinternitzEncoding(ShaMessageHash).init(message_hash, 8);
+    var xmss = ShaWinternitzXMSS.init(allocator, lifetime_log2, hash, message_hash, prf, encoding);
+
+    var key_pair = try xmss.generateKeyPair();
+    defer key_pair.public_key.deinit(allocator);
+    defer key_pair.secret_key.deinit(allocator);
+
+    var message: [32]u8 = undefined;
+    std.crypto.random.bytes(&message);
+
+    // should be < lifetime
+    const epoch = 12;
+    var signature = try xmss.sign(&key_pair.secret_key, @intCast(epoch), &message);
+    defer signature.deinit(allocator);
+
+    const valid = try xmss.verify(&key_pair.public_key, @intCast(epoch), &message, &signature);
+    try std.testing.expect(valid);
 }

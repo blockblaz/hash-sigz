@@ -8,9 +8,6 @@ const WinternitzEncoding = @import("encoding/winternitz.zig").WinternitzEncoding
 const MerkleTree = @import("tweak/tree.zig").MerkleTree;
 const MerklePath = @import("tweak/tree.zig").MerklePath;
 const chain = @import("hash_chain.zig").chain;
-// const TweakableHash = @import("tweak/tweakable.zig").TweakableHash;
-// const PRF = @import("prf/prf.zig").PRF;
-// const IncomparableEncoding = @import("encoding/encoding.zig").IncomparableEncoding;
 
 pub fn XMSS(
     comptime TweakHash: type,
@@ -228,33 +225,4 @@ pub fn XMSS(
             return is_valid;
         }
     };
-}
-
-pub const ShaWinternitzXMSS = XMSS(ShaTweakHash, ShaPRF, ShaMessageHash, WinternitzEncoding(ShaMessageHash));
-pub const ShaTargetSumXMSS = XMSS(ShaTweakHash, ShaPRF, ShaMessageHash, TargetSumEncoding(ShaMessageHash));
-// pub const PoseidonWinternitzXMSS = XMSS(PoseidonTweakHash, PoseidonPRF, PoseidonMessageHash, WinternitzEncoding);
-// pub const PoseidonTargetSumXMSS = XMSS(PoseidonTweakHash, PoseidonPRF, PoseidonMessageHash, TargetSumEncoding);
-
-test "ShaWinternitzXMSS sign/verify small" {
-    const allocator = std.testing.allocator;
-
-    const lifetime_log2: u8 = 4;
-    const chunk_size: u8 = 1;
-
-    var xmss = try ShaWinternitzXMSS.init(allocator, lifetime_log2, chunk_size, 26, 8);
-
-    var key_pair = try xmss.generateKeyPair();
-    defer key_pair.public_key.deinit(allocator);
-    defer key_pair.secret_key.deinit(allocator);
-
-    var message: [32]u8 = undefined;
-    std.crypto.random.bytes(&message);
-
-    // should be < lifetime
-    const epoch = 12;
-    var signature = try xmss.sign(&key_pair.secret_key, @intCast(epoch), &message);
-    defer signature.deinit(allocator);
-
-    const valid = try xmss.verify(&key_pair.public_key, @intCast(epoch), &message, &signature);
-    try std.testing.expect(valid);
 }
