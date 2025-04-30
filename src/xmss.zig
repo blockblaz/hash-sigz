@@ -5,8 +5,7 @@ const ShaPRF = @import("prf/sha3.zig").ShaPRF;
 const ShaMessageHash = @import("message_hash/sha3.zig").ShaMessageHash;
 const TargetSumEncoding = @import("encoding/target_sum.zig").TargetSumEncoding;
 const WinternitzEncoding = @import("encoding/winternitz.zig").WinternitzEncoding;
-const MerkleTree = @import("tweak/tree.zig").MerkleTree;
-const MerklePath = @import("tweak/tree.zig").MerklePath;
+const ssz = @import("ssz");
 const chain = @import("hash_chain.zig").chain;
 
 pub fn XMSS(
@@ -19,12 +18,16 @@ pub fn XMSS(
         const Self = @This();
 
         pub const Signature = struct {
-            path: MerklePath(TweakHash),
+            path: ssz.MerklePath,
             randomness: []u8,
             chain_values: [][]u8,
 
             pub fn deinit(self: *@This(), allocator: Allocator) void {
-                self.path.deinit(allocator);
+                // self.path.deinit(allocator);
+                for (self.path) |node| {
+                    allocator.free(node);
+                }
+                allocator.free(self.path);
                 allocator.free(self.randomness);
                 for (self.chain_values) |val| {
                     allocator.free(val);
@@ -40,7 +43,7 @@ pub fn XMSS(
 
         pub const PublicKey = struct {
             // Domain
-            root: []u8,
+            root: []u8, 
             // Parameter
             hash_parameter: []u8,
 
@@ -54,13 +57,17 @@ pub fn XMSS(
             // Key
             prf_key: []u8,
             // Merkle Tree of All 2^LOG_LIFETIME Hashes
-            tree: MerkleTree(TweakHash),
+            tree: ssz.MerkleTree,
             // Parameter
             parameter: []u8,
 
             pub fn deinit(self: *@This(), allocator: Allocator) void {
                 allocator.free(self.prf_key);
-                self.tree.deinit(allocator);
+                // self.tree.deinit(allocator);
+                for (self.tree) |node| {
+                    allocator.free(node);
+                }
+                allocator.free(self.tree);
                 allocator.free(self.parameter);
             }
         };
@@ -119,16 +126,24 @@ pub fn XMSS(
                 self.allocator.free(chain_ends);
             }
 
-            var tree = try MerkleTree(TweakHash).build(
+            // var tree = try MerkleTree(TweakHash).init(
+            //     self.allocator,
+            //     parameter,
+            //     self.hash,
+            //     public_key_hashes,
+            // );
+
+            const tree = try ssz.merkleizeWithTweak(
+                TweakHash,
+                self.hash,
                 self.allocator,
                 parameter,
-                self.hash,
                 public_key_hashes,
             );
 
             const key_pair = KeyPair{
                 .public_key = PublicKey{
-                    .root = try self.allocator.dupe(u8, tree.root()),
+                    .root = try self.allocator.dupe(u8, ssz.treeRoot(tree)),
                     .hash_parameter = try self.allocator.dupe(u8, parameter),
                 },
                 .secret_key = SecretKey{
@@ -152,7 +167,7 @@ pub fn XMSS(
             epoch: u32,
             message: []const u8,
         ) !Signature {
-            const path = try secret_key.tree.path(self.allocator, @as(usize, epoch));
+            const path = try ssz.buildPath(self.allocator, secret_key.tree, @as(usize, epoch));
 
             const max_tries = self.encoding.max_tries;
             var attempts: usize = 0;
@@ -225,7 +240,22 @@ pub fn XMSS(
             defer self.allocator.free(leaf_hash_recomputed);
             self.hash.hash(public_key.hash_parameter, leaf_tweak, chain_ends, leaf_hash_recomputed);
 
-            const is_valid = try signature.path.verify(self.allocator, public_key.hash_parameter, public_key.root, leaf_hash_recomputed);
+            // const is_valid = try signature.path.verifyPath(self.allocator, public_key.hash_parameter, self.hash, @as(usize, epoch), public_key.root, &leaf_hash_recomputed);
+            const is_valid = ssz.verifyPath(
+                TweakHash,
+                public_key.hash_parameter,
+                self.hash,
+                @as(usize, epoch),
+                public_key.root,
+                leaf_hash_recomputed,
+                signature.path,
+            );
+
+            // free path
+            // for (signature.path) |node| {
+            //     self.allocator.free(node);
+            // }
+            // self.allocator.free(signature.path);
 
             return is_valid;
         }
