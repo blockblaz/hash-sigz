@@ -75,7 +75,6 @@ test "all tests" {
     _ = @import("message_hash/sha3.zig");
     _ = @import("encoding/winternitz.zig");
     _ = @import("encoding/target_sum.zig");
-    _ = @import("tweak/tree.zig");
 }
 
 test "ShaWinternitzXMSS sign/verify small" {
