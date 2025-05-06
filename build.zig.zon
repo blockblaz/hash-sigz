@@ -1,0 +1,17 @@
+.{
+    .name = .hash_sigz,
+    .version = "0.0.0",
+    .fingerprint = 0x3a7712330d9c0744,
+    .minimum_zig_version = "0.14.0",
+    .dependencies = .{
+        .ssz = .{
+            .url = "git+https://github.com/blockblaz/ssz.zig#be9e28760a50e58732ffa83e587c92067f8c1972",
+            .hash = "ssz-0.0.4-Lfwd68F5AQCiUiWyGSUPVaIcBBfU_m-9dTQfcTxfJVsi",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
