@@ -8,6 +8,8 @@ type PublicKey = <Scheme as SignatureScheme>::PublicKey;
 type SecretKey = <Scheme as SignatureScheme>::SecretKey;
 type Signature = <Scheme as SignatureScheme>::Signature;
 
+// TODO:// Make sure Box pointer casts and implementation do not cause memory issues.
+
 /// Error codes for hash signature operations
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
