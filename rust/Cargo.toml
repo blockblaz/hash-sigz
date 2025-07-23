@@ -1,0 +1,21 @@
+[package]
+name = "hashsig-host"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "hashsig_host"
+crate-type = ["staticlib"]
+
+[dependencies]
+hashsig = { path = "../../hash-sig" }
+rand = "0.9"
+
+[build-dependencies]
+cbindgen = "0.26"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
