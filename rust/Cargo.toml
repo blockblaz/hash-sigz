@@ -8,7 +8,7 @@ name = "hashsig_host"
 crate-type = ["staticlib"]
 
 [dependencies]
-hashsig = { path = "../../hash-sig" }
+hashsig = { git = "https://github.com/b-wagn/hash-sig", branch = "main" }
 rand = "0.9"
 
 [build-dependencies]

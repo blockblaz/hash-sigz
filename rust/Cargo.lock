@@ -216,6 +216,7 @@ checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 [[package]]
 name = "hashsig"
 version = "0.1.0"
+source = "git+https://github.com/b-wagn/hash-sig?branch=main#87f90746acc23e3ea81b9afab3e2f55a77bdc27c"
 dependencies = [
  "dashmap",
  "num-bigint",
